@@ -12,7 +12,7 @@ These playbooks were built to run locally, but can be easily altered to run from
 
 **Required Folder Directories**
 
-The machine staging/coping/sharing/manipulating the ISO files will need the following directories, but you can create your own if these are not your cup of tea. The fullmetalbuild references these locations in the playbook. You will only need to do this once:
+The machine staging/copying/sharing/manipulating the ISO files will need the following directories, but you can create your own if these are not your cup of tea. The fullmetalbuild references these locations in the playbook. You will only need to do this once:
 
     /opt/esxiisosrc  
     /opt/baremetal  
@@ -26,18 +26,31 @@ It is recommended to run all Ansible playbooks in a `virtualenv` for flexibility
 
 **Additional pip3 required installations:**  
 
+    ansible==2.9.5  
+    certifi==2019.11.28  
+    cffi==1.14.0  
+    chardet==3.0.4  
+    cryptography==2.8  
+    idna==2.9  
+    Jinja2==2.11.1  
+    MarkupSafe==1.1.1  
+    pycparser==2.19  
     python-hpilo==4.3  
     pyvmomi==6.7.3  
-    requests==2.22.0  
+    PyYAML==5.3  
+    requests==2.23.0  
+    six==1.14.0  
+    urllib3==1.25.8   
 
 **Additional Software Required**
 
 `mkisofs` on the machine manipulating the files for the iso.  
 `nginx` or the webserver app of your choice on the webserver hosting the iso, if you are using the url version of remote boot.
+`openssl` to encrypt the esxi root password that goes into the kickstart file.
 
 **The Resources in this Repo Were Tested On:**
 
-vCenter/ESXi Versions were 6.5 GA and above, however, according to [William Lam's post on kickstart] ("https://www.virtuallyghetto.com/2012/03/how-to-create-bootable-esxi-5-iso.html"), the method for kickstart file use in ESXi goes at least as far back as ESXi 5.0.
+vCenter/ESXi Versions were 6.5 GA and above, however, according to [William Lam's post on kickstart](https://www.virtuallyghetto.com/2012/03/how-to-create-bootable-esxi-5-iso.html), the method for kickstart file use in ESXi goes at least as far back as ESXi 5.0.
 
 **HPE Hardware/Firmware versions tested:**
 
@@ -91,7 +104,7 @@ Should look like the following. You may have to scroll over to see the end of th
 
 ## Thank Yous and Contributors
 
-* Could not have done this without [William Lam's post about kickstart] ("https://www.virtuallyghetto.com/2012/03/how-to-create-bootable-esxi-5-iso.html").
+* Could not have done this without [William Lam's post about kickstart](https://www.virtuallyghetto.com/2012/03/how-to-create-bootable-esxi-5-iso.html).
 * HPE Hardware and their donation(s) of time.
 
 ## Versioning
