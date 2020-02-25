@@ -1,0 +1,8 @@
+---
+vcenter_hostname: ""
+datacenter_name: ""
+syslog_host: ""
+vcenter_switch_name: ""
+vlan_id: ""
+net_mask: ""
+gate_way: ""

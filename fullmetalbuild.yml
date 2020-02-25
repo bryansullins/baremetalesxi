@@ -1,0 +1,311 @@
+---
+- hosts: localhost
+  gather_facts: false
+  become: yes
+  vars_files:
+    - vars/creds.yml
+    - vars/vcentervars.yml
+  vars:
+    - ansible_python_interpreter: python3
+    - ansible_host_key_checking: false
+    - validate_certs: false
+    # Source ISO location on webserver is /opt/esxiisosrc/ - copy the desired installation version there and 
+    # change the below variables to the exact filename of the desired ESXi Version and build.
+    # Long term use requires you to add the build directories from the extracted boot.cfg files from the original iso
+    # and add them to the files/ directory. Please see README.md for more information, or inspect the files directory for examples.
+    - src_iso_file: "VMware-ESXi-6.7.0-9484548-HPE-Gen9plus-670.10.3.5.6-Sep2018.iso"
+    - esxi_build: "15160138"
+    - encrypted_root_password: "" # <- Use openssl to create this. You can also vault the encrypted string for more protection.
+  vars_prompt:
+    - name: "esxi_hostname"
+      prompt: "Enter the ESXi Hostname"
+      private: no
+    - name: "host_management_ip"
+      prompt: "Enter the host Management IP"
+      private: no
+    - name: "vmotion_ip"
+      prompt: "Enter the vMotion IP"
+      private: no
+    - name: "ilo_ip"
+      prompt: "Enter ilo IP"
+      private: no
+    - name: "cluster_name"
+      prompt: "Enter the Cluster Name"
+      private: no
+  no_log: true
+
+  tasks:
+
+## /opt/baremetal is the staging directory.
+  - name: Mounting source directory from official production ESXi ISO . . . copying over build files . . . backing up defaults . . .
+    shell: |
+      mkdir /mnt/{{ esxi_hostname }}
+      mount -o loop -t iso9660 /opt/esxiisosrc/{{ src_iso_file }} /mnt/{{ esxi_hostname }}/
+      mkdir /opt/baremetal/{{ esxi_hostname }}
+      mkdir /opt/baremetal/temp/{{ esxi_hostname }}
+      mkdir -p /opt/baremetal/temp/{{ esxi_hostname }}/etc/vmware/weasel
+      cp -r /mnt/{{ esxi_hostname }}/* /opt/baremetal/{{ esxi_hostname }}/
+      umount /mnt/{{ esxi_hostname }}
+      mv /opt/baremetal/{{ esxi_hostname }}/boot.cfg /opt/baremetal/{{ esxi_hostname }}/boot.cfg.orig
+      mv /opt/baremetal/{{ esxi_hostname }}/efi/boot/boot.cfg /opt/baremetal/{{ esxi_hostname }}/efi/boot/boot.cfg.orig
+  
+## The following two tasks will make the custom iso bootable by both legacy and UEFI implementations:    
+  - name: Copying custom boot.cfg to root directory . . .
+    copy:
+      src: files/{{ esxi_build }}/boot.cfg
+      dest: /opt/baremetal/{{ esxi_hostname }}
+      owner: root
+      group: root
+      mode: '0744'
+
+  - name: Copying custom UEFI boot.cfg to root efi directory . . .
+    copy:
+      src: files/{{ esxi_build }}/efi/boot/boot.cfg
+      dest: /opt/baremetal/{{ esxi_hostname }}/efi/boot
+      owner: root
+      group: root
+      mode: '0744'
+
+## Additional options can be appened after the "reboot" at the end of the content section, such as scripted esxcli commands, etc.
+  - name: Creating kickstart file with proper automation contents . . .
+    copy:
+      force: true
+      dest: /opt/baremetal/temp/{{ esxi_hostname }}/etc/vmware/weasel/ks.cfg
+      content: |
+        vmaccepteula
+        clearpart --firstdisk=local --overwritevmfs
+        install --firstdisk=local --overwritevmfs
+        rootpw --iscrypted {{ encrypted_root_password }}
+        network --bootproto=static --addvmportgroup=1 --vlanid={{ vlan_id }} --ip={{ host_management_ip }} --netmask={{ net_mask }} --gateway={{ gate_way }} --nameserver="#.#.#.#,#.#.#.#" --hostname={{ esxi_hostname }}
+        reboot 
+
+  - name: Scripting commands to tarball the kickstart file and make the proper iso . . .
+    shell: |
+      chmod ugo+x /opt/baremetal/temp/{{ esxi_hostname }}/etc/vmware/weasel/ks.cfg
+      cd /opt/baremetal/temp/{{ esxi_hostname }}
+      tar czvf bmks.tgz *
+      chmod ugo+x /opt/baremetal/temp/{{ esxi_hostname }}/bmks.tgz
+      cp /opt/baremetal/temp/{{ esxi_hostname }}/bmks.tgz /opt/baremetal/{{ esxi_hostname }}/
+      cd /opt/baremetal/{{ esxi_hostname }}
+      
+  - name: Creating bootable iso from all files . . .
+    shell: >
+      mkisofs
+      -relaxed-filenames
+      -J
+      -R
+      -b isolinux.bin
+      -c boot.cat
+      -no-emul-boot
+      -boot-load-size 4
+      -boot-info-table
+      -eltorito-alt-boot
+      -e efiboot.img
+      -boot-load-size 1
+      -no-emul-boot
+      -o /opt/baremetal/{{ esxi_hostname }}.iso
+      /opt/baremetal/{{ esxi_hostname }}/
+
+  - name: Moving created iso to webserver . . .
+    shell: |
+      mv /opt/baremetal/{{ esxi_hostname }}.iso /usr/share/nginx/html/isos/
+
+  - name: Booting once using the custom built iso . . .
+    hpilo_boot:
+      host: "{{ ilo_ip }}"
+      login: admin
+      password: "{{ ilo_password }}"
+      media: cdrom
+      image: http://#.#.#.#/isos/{{ esxi_hostname }}.iso # <- Your webserver url should go here.
+    delegate_to: localhost
+
+  - name: Waiting for custom installation to complete . . .
+    wait_for: 
+      delay: 120
+      sleep: 3
+      host: "{{ host_management_ip }}"
+      timeout: 840
+    delegate_to: localhost
+
+  - name: Deleting all related files from staging location and web server . . .
+    shell: |
+      rm -rf {{ esxi_hostname }}
+      rm -rf temp/{{ esxi_hostname }}
+      rm -f /usr/share/nginx/html/isos/{{ esxi_hostname }}.iso
+      rm -rf /mnt/{{ esxi_hostname }}
+    args:
+      chdir: /opt/baremetal
+
+## vCenter and ESXi configuration follows here:
+  - name: Adding ESXi host "{{ esxi_hostname }}.yourdomain.here" to vCenter . . .
+    vmware_host:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      datacenter_name: "{{ datacenter_name }}"
+      cluster_name: "{{ cluster_name }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      esxi_username: "root"
+      esxi_password: "{{ esxi_password }}"
+      state: present
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Adding ESXi license and assigning to ESXi Host "{{ esxi_hostname }}.yourdomain.here" . . .
+    vcenter_license:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      license: "{{ esxi_license }}"
+      state: present
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Adding vmnic1 to vSwitch0 . . .
+    vmware_vswitch:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{esxi_hostname }}.yourdomain.here"
+      switch: vSwitch0
+      nics:
+        - vmnic1
+      validate_certs: false
+    delegate_to: localhost
+  
+  - name: Changing Advanced Settings . . . Core Dump Warning Disable . . . Set Syslog Server
+    vmware_host_config_manager:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      options:
+        'UserVars.SuppressCoredumpWarning': '1'
+        'Syslog.global.logHost': '{{ syslog_host }}'
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Setting the Power Management Policy to high-performance . . .
+    vmware_host_powermgmt_policy:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      policy: high-performance
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Adding vmkernel Portgroup with all settings defined . . .
+    vmware_portgroup:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      switch: "vSwitch0"
+      portgroup: "vMotion"
+      vlan_id: 125
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Adding vMotion vmkernel port with default TCP/IP stack . . .
+    vmware_vmkernel:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      vswitch_name: "vSwitch0"
+      portgroup_name: "vMotion"
+      network:
+        type: "static"
+        ip_address: "{{ vmotion_ip }}"
+        subnet_mask: 255.255.255.0
+        tcpip_stack: default
+      state: present
+      enable_vmotion: true
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Configuring NTP servers for host "{{ esxi_hostname }}.yourdomain.here" . . .
+    vmware_host_ntp:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      ntp_servers:
+        - time.nist.gov
+      validate_certs: false
+    delegate_to: localhost
+
+  - name: Starting NTP Service and set to start at boot.
+    vmware_host_service_manager:
+      hostname: '{{ vcenter_hostname }}'
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      validate_certs: false
+      service_name: ntpd
+      service_policy: on
+      state: start
+    delegate_to: localhost
+
+  - name: Restarting Syslog Service since settings have changed and set to start at boot . . .
+    vmware_host_service_manager:
+      hostname: '{{ vcenter_hostname }}'
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      validate_certs: false
+      service_name: vmsyslogd
+      service_policy: on
+      state: restart
+    delegate_to: localhost
+
+  - name: Adding host "{{ esxihostname }}.yourdomain.here" to VDS . . .
+    vmware_dvs_host:
+      hostname: "{{ vcenter_hostname }}"
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      switch_name: "{{ vcenter_switch_name }}"
+      vmnics:
+        - vmnic2
+        - vmnic3
+      state: present
+      validate_certs: False
+    delegate_to: localhost
+
+  - name: Stopping ESXi Shell Service and setting to disable at boot . . .
+    vmware_host_service_manager:
+      hostname: '{{ vcenter_hostname }}'
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      validate_certs: false
+      service_name: TSM
+      service_policy: off
+      state: stop
+    delegate_to: localhost
+
+  - name: Stopping SSH Service and setting to disable at boot.
+    vmware_host_service_manager:
+      hostname: '{{ vcenter_hostname }}'
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      validate_certs: false
+      service_name: TSM-SSH
+      service_policy: off
+      state: stop
+    delegate_to: localhost
+
+  - name: Taking host out of maintenance mode. Last task! . . .
+    vmware_maintenancemode:
+      hostname: '{{ vcenter_hostname }}'
+      username: "administrator@vsphere.local"
+      password: "{{ vcenter_password }}"
+      esxi_hostname: "{{ esxi_hostname }}.yourdomain.here"
+      timeout: 3600
+      state: absent
+      validate_certs: false
+    delegate_to: localhost
