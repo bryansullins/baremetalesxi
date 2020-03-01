@@ -111,7 +111,6 @@
       mv /opt/baremetal/{{ esxi_hostname }}.iso /usr/share/nginx/html/isos/
 
 # Can also use the Dell/EMC iDRAC Repo . . .
-
   - name: Booting once using the custom built iso . . .
     hpilo_boot:
       host: "{{ ilo_ip }}"
