@@ -17,7 +17,7 @@ The machine staging/copying/sharing/manipulating the ISO files will need the fol
     /opt/esxiisosrc  
     /opt/baremetal  
 
-You will also need to setup nginx (or webserver of your choice, that will be the webserver allowing access to the customized iso. I made a directory called "isos" under the default location in the verison of nginx I am running:
+You will also need to setup nginx (or webserver of your choice), that will be the webserver allowing access to the customized iso. I made a directory called "isos" under the default location in the verison of nginx I am running:
 
     /usr/share/nginx/html/isos/
 
