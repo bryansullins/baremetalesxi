@@ -48,9 +48,11 @@ It is recommended to run all Ansible playbooks in a `virtualenv` for flexibility
 
 **Additional Software Required**
 
-`mkisofs` on the machine manipulating the files for the iso.  
-`nginx` or the webserver app of your choice on the webserver hosting the iso, if you are using the url version of remote boot.
-`openssl` to encrypt the esxi root password that goes into the kickstart file.
+- `mkisofs` on the machine manipulating the files for the iso.  
+- `nginx` or the webserver app of your choice on the webserver hosting the iso, if you are using the url version of remote boot.
+- `openssl` to encrypt the esxi root password that goes into the kickstart file. Example:
+    openssl -1 "foo"
+
 
 **The Resources in this Repo Were Tested On:**
 
