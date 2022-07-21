@@ -68,7 +68,7 @@ The automated kickstart injection process will prepare the customized ISO for bo
 
 ### IMPORTANT!!! Use of this Repo and new ESXi Releases
 
-At the top of the `fullmetal.yml` file, there are instructions for new ESXi host releases. With every new ISO release, you will need to place the new ISO into the directory specified in the playbook (within the `vars` codeblock).
+At the top of the `fullmetalbuild.yml` file, there are instructions for new ESXi host releases. With every new ISO release, you will need to place the new ISO into the directory specified in the playbook (within the `vars` codeblock).
 
 The second thing you will need to do is extract and customize the following files from that new release:
 
