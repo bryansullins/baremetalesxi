@@ -1,7 +1,0 @@
-sddc_manager_url     = "https://sddc-manager.example.local"
-bearer_token         = "paste-temporary-api-token-here"
-skip_tls_verify      = true
-min_domains_expected = 1
-
-# Optional extra read-only checks (keep empty to only check /v1/domains):
-# additional_get_paths = []
