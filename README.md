@@ -2,6 +2,10 @@
 
 This Project is my effort to create a single touch method for provisioning ESXi hosts from bare metal/powered off to production ready in vCenter. This was built using HPE hardware, however, there is no reason you can't modify this to work with Dell hosts. I made some effort to make this repo hardware-agnostic.
 
+## Additional examples
+
+- `examples/vcf-sddc-manager-readonly-terraform`: non-destructive Terraform API gate for VCF SDDC Manager (read-only GET checks suitable for CI/blog demos).
+
 ## Getting Started
 
 Clone the repo using the usual methods and alter the yml to fit your environment. Not everything is parameterized, so you might consider setting some of what I have hard-coded here to variables so they are easier to alter long term.
